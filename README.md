@@ -70,3 +70,5 @@ npm run dev
 ## More detail
 Each subfolder has its own README with the full specifics: `web/README.md`
 and `mobile/README.md`.
+
+<!-- redeploy trigger -->
