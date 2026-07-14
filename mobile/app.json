@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Darkroom",
+    "slug": "darkroom-photo-styles",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#14110F",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "backgroundColor": "#14110F"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Darkroom needs camera access to show a live preview and capture photos to style."
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yourcompany.darkroom",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Darkroom needs access to your photos so you can apply a style to them.",
+        "NSCameraUsageDescription": "Darkroom needs camera access so you can take a photo to style."
+      }
+    },
+    "android": {
+      "package": "com.yourcompany.darkroom",
+      "adaptiveIcon": {
+        "backgroundColor": "#14110F"
+      },
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
+    }
+  }
+}
