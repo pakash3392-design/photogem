@@ -53,9 +53,11 @@ export async function POST(req: NextRequest) {
     // and starts altering the background/scene. This instruction explicitly
     // tells it to treat the style prompt as color/light/grain treatment only,
     // and never touch the subject, background, or composition.
-    const editPrompt = `Apply a color grade and lighting treatment to this exact photo. Do NOT change the subject, the background, or any objects in the scene. Do NOT add, remove, or replace anything. Keep the exact same composition, framing, and content as the original -- this is a color/lighting edit only, like a photo filter, not a scene change.
+    const editPrompt = `Apply a strong, clearly visible color grade and lighting treatment to this exact photo -- this should look like a bold, professional photo filter, not a barely-there tweak. Push the color grading, contrast, and tone noticeably in the direction described below.
 
-The treatment to apply (use only the color, tone, lighting, contrast, and film-grain qualities described here -- ignore any mention of scenery, location, or background): ${style.prompt}`;
+Do NOT change the subject, the background, or any objects in the scene. Do NOT add, remove, or replace anything, and do NOT change the composition or framing -- only the color, light, contrast, and grain should shift.
+
+Apply this treatment boldly (ignore any mention of scenery, location, or background in the description -- use only its color, tone, lighting, contrast, and film-grain qualities): ${style.prompt}`;
 
     const output = await replicate.run(MODEL as `${string}/${string}`, {
       input: {
