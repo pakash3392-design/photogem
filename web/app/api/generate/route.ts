@@ -45,15 +45,24 @@ export async function POST(req: NextRequest) {
     // ever want to pin a specific version or swap models.
     const MODEL = process.env.REPLICATE_MODEL_VERSION || 'black-forest-labs/flux-kontext-pro';
 
-    // Flux Kontext works best with a direct, specific instruction. We turn
-    // each style's mood description into an explicit "make this photo look
-    // like..." edit instruction.
-    const editPrompt = `Edit this photo to match this exact look: ${style.prompt}. Keep the same subject, pose, and composition -- only change the lighting, color grade, and mood.`;
+    // Flux Kontext works best with a direct, specific instruction. Style
+    // prompts in lib/styles.ts were written to describe a *mood* for the
+    // style-picker thumbnails, and often mention scenery (e.g. "wheat-field
+    // background") that described the reference photo, not an instruction
+    // to change the user's photo. Left as-is, the model reads that literally
+    // and starts altering the background/scene. This instruction explicitly
+    // tells it to treat the style prompt as color/light/grain treatment only,
+    // and never touch the subject, background, or composition.
+    const editPrompt = `Apply a color grade and lighting treatment to this exact photo. Do NOT change the subject, the background, or any objects in the scene. Do NOT add, remove, or replace anything. Keep the exact same composition, framing, and content as the original -- this is a color/lighting edit only, like a photo filter, not a scene change.
+
+The treatment to apply (use only the color, tone, lighting, contrast, and film-grain qualities described here -- ignore any mention of scenery, location, or background): ${style.prompt}`;
 
     const output = await replicate.run(MODEL as `${string}/${string}`, {
       input: {
         prompt: editPrompt,
         input_image: imageDataUrl,
+        aspect_ratio: 'match_input_image',
+        output_format: 'png',
       },
     });
 
