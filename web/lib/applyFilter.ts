@@ -99,6 +99,13 @@ export function applyFilter(img: HTMLImageElement, recipe: FilterRecipe): string
     }
   }
 
+  if (recipe.letterbox) {
+    const barHeight = canvas.height * 0.12;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, barHeight);
+    ctx.fillRect(0, canvas.height - barHeight, canvas.width, barHeight);
+  }
+
   return canvas.toDataURL('image/jpeg', 0.92);
 }
 

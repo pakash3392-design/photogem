@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { View, StyleSheet, LayoutChangeEvent, useWindowDimensions } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import Svg, { Defs, Filter, FeColorMatrix, Image as SvgImage } from 'react-native-svg';
 import { FilterRecipe } from '../constants/styles';
 import { buildColorMatrix } from '../lib/colorMatrix';
@@ -19,6 +19,7 @@ type Props = {
 const FilteredImage = forwardRef<View, Props>(({ uri, filter, width, height }, ref) => {
   const matrix = buildColorMatrix(filter);
   const filterId = 'styleFilter';
+  const barHeight = filter.letterbox ? height * 0.12 : 0;
 
   return (
     <View ref={ref} style={{ width, height, backgroundColor: '#000' }} collapsable={false}>
@@ -38,8 +39,23 @@ const FilteredImage = forwardRef<View, Props>(({ uri, filter, width, height }, r
           filter={`url(#${filterId})`}
         />
       </Svg>
+      {filter.letterbox && (
+        <>
+          <View style={[styles.letterboxBar, { height: barHeight, top: 0 }]} />
+          <View style={[styles.letterboxBar, { height: barHeight, bottom: 0 }]} />
+        </>
+      )}
     </View>
   );
+});
+
+const styles = StyleSheet.create({
+  letterboxBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    backgroundColor: '#000000',
+  },
 });
 
 export default FilteredImage;
