@@ -1,66 +1,68 @@
 # Darkroom — one-tap photographer styles
 
-Upload a photo, tap a style, get it back transformed instantly. Built with
-Next.js (React). All 68 styles are applied entirely in the browser using
-real color-grading code (Canvas API) -- no AI service, no API keys, no
-per-image cost, and it works instantly.
+Upload a photo, tap a style, get a real AI-edited photo back in seconds.
+Built with Next.js (React), using Google's Gemini 2.5 Flash Image model for
+genuine AI photo editing -- actual re-lighting, mood, and atmosphere, not
+just a color filter.
+
+## Why Gemini
+Gemini 2.5 Flash Image has a real free tier as of mid-2026: hundreds of
+image edits per day, no credit card required. (An earlier version of this
+app used Replicate's Flux Kontext Pro, which required paid billing after a
+short free trial -- Gemini avoids that.)
 
 ## What's already built
-- Upload UI with drag-and-drop (`app/page.tsx`)
-- 68 styles across 13 categories (`lib/styles.ts`) — Portrait, Landscape,
-  Street, Wedding, Fashion, Film & Vintage, Cinematic, Black & White,
-  Experimental, Nature & Wildlife, Architecture, Night & Urban, Lifestyle.
-  18 of these use real reference photos (in `public/reference-photos`);
-  the rest use placeholder thumbnail images clearly marked in the code.
-- A real photo-filter engine (`lib/applyFilter.ts`) that applies each
-  style's color grade, contrast, warmth/tint, grain, and vignette directly
-  to the pixels of your photo using the Canvas API
+- Upload UI with drag-and-drop and automatic resizing (`app/page.tsx`)
+- 78 styles across 13 categories (`lib/styles.ts`)
+- A backend API route (`app/api/generate/route.ts`) that sends your photo +
+  the chosen style's prompt to Gemini and returns the edited result
 - Custom "darkroom" visual design (dark charcoal, copper accent)
 
 ## Running it
 
+### 1. Install dependencies
 ```
 npm install
+```
+
+### 2. Get a free Gemini API key
+- Go to https://aistudio.google.com/apikey
+- Sign in with a Google account, click "Create API key" — no credit card
+- Copy the key
+
+### 3. Set your environment variable
+```
+cp .env.example .env.local
+```
+Paste your key into `GEMINI_API_KEY` in `.env.local`.
+
+### 4. Run it
+```
 npm run dev
 ```
-
-Open http://localhost:3000. That's it — no environment variables, no API
-keys, no third-party account needed. Everything runs client-side.
-
-## How the styling actually works
-Each style in `lib/styles.ts` has a `filter` field:
-
-```ts
-filter: { grayscale: false, warmth: 24, tint: 4, saturation: 1.1, contrast: 1.15, grain: 0.08, vignette: 0.12 }
-```
-
-`lib/applyFilter.ts` reads these numbers and applies them directly to your
-photo's pixels: contrast and brightness math, a saturation blend against
-luminance, a warmth/tint channel shift, an optional grayscale pass, a radial
-vignette, and a film-grain overlay. This is the same category of technique
-real photo-filter apps use — deterministic, fast, and free to run as much as
-you want.
-
-## Adding or tuning your own styles
-Open `lib/styles.ts`. Each style needs a `referenceImage` (thumbnail shown
-in the picker) and a `filter` recipe. Tweak the numbers directly, or use
-these ranges as a guide:
-- `warmth`: -100 (cooler/blue) to 100 (warmer/orange)
-- `tint`: -100 (green) to 100 (magenta)
-- `saturation`: 0 (grayscale) to ~1.5 (vivid); 1 = untouched
-- `contrast`: ~0.75 (flat) to ~1.45 (punchy); 1 = untouched
-- `grain`: 0 (clean) to ~0.3 (heavy film grain)
-- `vignette`: 0 (none) to ~0.3 (strong edge darkening)
+Open http://localhost:3000
 
 ## Deploying
-Push to GitHub, import into Vercel (vercel.com) — no environment variables
-needed. It's a static-friendly app with no backend calls required for the
-core feature.
+Push to GitHub, import into Vercel, add `GEMINI_API_KEY` in Vercel's
+Environment Variables (Settings > Environment Variables), covering
+Production.
 
-## Next steps
-- Swap the 50 placeholder-image styles for real reference photos as you
-  shoot or source them
-- If you later want true AI-level transformations (e.g. actually repainting
-  a background, not just color grading), that's a separate, paid feature
-  you can add back via a service like Replicate -- but the current filter
-  engine covers the vast majority of "photographer style" requests for free
+## How the AI editing works
+Gemini 2.5 Flash Image takes your photo plus a text instruction and returns
+a genuinely edited image (`app/api/generate/route.ts`). Each style's
+`prompt` in `lib/styles.ts` describes the treatment; the route wraps it
+with instructions to act as an expert retoucher and to keep the subject and
+composition recognizable, so it reads as a professional edit of your photo
+rather than a different photo entirely.
+
+## Adding your own styles
+Open `lib/styles.ts`. Each style needs a `referenceImage` (thumbnail for
+the picker) and a `prompt` (the actual instruction Gemini follows) — be
+specific about lighting, color, mood, and technique.
+
+## Cost and limits
+This app is free to run within Gemini's free tier. If you exceed the daily
+free limit, requests will start failing until it resets — check current
+limits at https://ai.google.dev/gemini-api/docs/pricing. If you outgrow the
+free tier, Gemini's paid pricing is inexpensive per image, or you can swap
+in another model in `app/api/generate/route.ts`.

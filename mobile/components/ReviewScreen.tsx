@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -7,13 +7,15 @@ import {
   Image,
   Pressable,
   StyleSheet,
+  ActivityIndicator,
   Alert,
-  useWindowDimensions,
 } from 'react-native';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { File, Paths } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
-import { captureRef } from 'react-native-view-shot';
-import { STYLE_PRESETS } from '../constants/styles';
-import FilteredImage from './FilteredImage';
+import { STYLE_PRESETS, API_BASE_URL } from '../constants/styles';
+
+type Status = 'ready' | 'processing' | 'done' | 'error';
 
 type Props = {
   imageUri: string;
@@ -24,38 +26,69 @@ type Props = {
 
 export default function ReviewScreen({ imageUri, initialStyle, onBack }: Props) {
   const [selectedStyle, setSelectedStyle] = useState(initialStyle);
-  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+  const [status, setStatus] = useState<Status>('ready');
+  const [resultUri, setResultUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const captureViewRef = useRef<View>(null);
-  const { width: screenWidth } = useWindowDimensions();
-
-  useEffect(() => {
-    Image.getSize(
-      imageUri,
-      (w, h) => setImgSize({ w, h }),
-      () => setImgSize({ w: 3, h: 4 }) // fallback aspect ratio if it fails
-    );
-  }, [imageUri]);
 
   const currentStyle = STYLE_PRESETS.find((s) => s.id === selectedStyle)!;
 
-  const displayWidth = screenWidth - 40;
-  const displayHeight = imgSize ? (displayWidth * imgSize.h) / imgSize.w : displayWidth;
+  const generate = async () => {
+    setStatus('processing');
+    try {
+      // Resize before sending -- phone camera photos can be 5-10MB+, which
+      // fails against the backend's upload size limit otherwise.
+      const resized = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [{ resize: { width: 1536 } }],
+        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+
+      const res = await fetch(`${API_BASE_URL}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageDataUrl: `data:image/jpeg;base64,${resized.base64}`,
+          styleId: selectedStyle,
+        }),
+      });
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        throw new Error(
+          res.status === 413
+            ? 'That photo was too large to upload. Try a different photo.'
+            : `Unexpected server response (${res.status}): ${text.slice(0, 120)}`
+        );
+      }
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Something went wrong');
+
+      // data.resultUrl is a data: URL (base64) -- write it to a real local
+      // file so it can be displayed and saved to the camera roll.
+      const base64 = data.resultUrl.split(',')[1];
+      const file = new File(Paths.cache, `darkroom-${Date.now()}.png`);
+      file.write(base64, { encoding: 'base64' });
+
+      setResultUri(file.uri);
+      setStatus('done');
+    } catch (err: any) {
+      Alert.alert('Could not edit photo', err.message);
+      setStatus('error');
+    }
+  };
 
   const saveToPhotos = async () => {
+    if (!resultUri) return;
     setSaving(true);
     try {
       const permission = await MediaLibrary.requestPermissionsAsync();
       if (!permission.granted) {
         Alert.alert('Permission needed', 'Darkroom needs access to save photos to your library.');
-        setSaving(false);
         return;
       }
-      const uri = await captureRef(captureViewRef, {
-        format: 'jpg',
-        quality: 0.95,
-      });
-      await MediaLibrary.saveToLibraryAsync(uri);
+      await MediaLibrary.saveToLibraryAsync(resultUri);
       Alert.alert('Saved', 'Your styled photo was saved to your camera roll.');
     } catch (err: any) {
       Alert.alert('Could not save', err.message || 'Something went wrong.');
@@ -72,33 +105,47 @@ export default function ReviewScreen({ imageUri, initialStyle, onBack }: Props) 
         </Pressable>
 
         <View style={styles.frame}>
-          {imgSize ? (
-            <FilteredImage
-              ref={captureViewRef}
-              uri={imageUri}
-              filter={currentStyle.filter}
-              width={displayWidth}
-              height={displayHeight}
-            />
+          {status === 'done' && resultUri ? (
+            <View style={{ alignItems: 'center' }}>
+              <Image source={{ uri: resultUri }} style={styles.photo} resizeMode="cover" />
+              <Text style={styles.resultLabel}>
+                {currentStyle.code} · {currentStyle.name}
+              </Text>
+              <Pressable
+                onPress={saveToPhotos}
+                disabled={saving}
+                style={[styles.primaryButton, saving && { opacity: 0.5 }]}
+              >
+                <Text style={styles.primaryButtonText}>
+                  {saving ? 'SAVING...' : 'SAVE TO PHOTOS'}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.secondaryButton}
+                onPress={() => {
+                  setStatus('ready');
+                  setResultUri(null);
+                }}
+              >
+                <Text style={styles.secondaryButtonText}>TRY ANOTHER LOOK</Text>
+              </Pressable>
+            </View>
           ) : (
-            <View style={{ width: displayWidth, height: displayWidth }} />
+            <View style={{ alignItems: 'center' }}>
+              <Image source={{ uri: imageUri }} style={styles.photo} resizeMode="cover" />
+              {status === 'processing' && (
+                <View style={{ marginTop: 16, alignItems: 'center' }}>
+                  <ActivityIndicator color="#C77D4B" />
+                  <Text style={styles.processingLabel}>
+                    Editing in {currentStyle.name}...
+                  </Text>
+                </View>
+              )}
+            </View>
           )}
-          <Text style={styles.resultLabel}>
-            {currentStyle.code} · {currentStyle.name}
-          </Text>
-
-          <Pressable
-            onPress={saveToPhotos}
-            disabled={saving}
-            style={[styles.primaryButton, saving && { opacity: 0.5 }]}
-          >
-            <Text style={styles.primaryButtonText}>
-              {saving ? 'SAVING...' : 'SAVE TO PHOTOS'}
-            </Text>
-          </Pressable>
         </View>
 
-        <Text style={styles.sectionLabel}>CHOOSE A LOOK — APPLIES INSTANTLY</Text>
+        <Text style={styles.sectionLabel}>CHOOSE A LOOK</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 24 }}>
           {STYLE_PRESETS.map((style) => {
             const selected = style.id === selectedStyle;
@@ -116,6 +163,18 @@ export default function ReviewScreen({ imageUri, initialStyle, onBack }: Props) 
             );
           })}
         </ScrollView>
+
+        {status !== 'done' && (
+          <Pressable
+            style={[styles.primaryButton, status === 'processing' && { opacity: 0.5 }]}
+            onPress={generate}
+            disabled={status === 'processing'}
+          >
+            <Text style={styles.primaryButtonText}>
+              {status === 'processing' ? 'EDITING...' : 'APPLY LOOK'}
+            </Text>
+          </Pressable>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -137,19 +196,12 @@ const styles = StyleSheet.create({
     backgroundColor: SURFACE,
     padding: 16,
     marginBottom: 24,
-    alignItems: 'center',
+    minHeight: 240,
+    justifyContent: 'center',
   },
+  photo: { width: '100%', height: 320, borderRadius: 8, backgroundColor: '#000' },
   resultLabel: { color: COPPER, fontSize: 11, letterSpacing: 2, marginTop: 14 },
-  primaryButton: {
-    backgroundColor: COPPER,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 999,
-    marginTop: 16,
-    alignSelf: 'stretch',
-    alignItems: 'center',
-  },
-  primaryButtonText: { color: CHARCOAL, fontSize: 12, fontWeight: '600', letterSpacing: 1.5 },
+  processingLabel: { color: COPPER, fontSize: 11, letterSpacing: 2, marginTop: 8 },
   sectionLabel: {
     color: 'rgba(242,236,228,0.4)',
     fontSize: 11,
@@ -176,4 +228,22 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginRight: 8,
   },
+  primaryButton: {
+    backgroundColor: COPPER,
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderRadius: 999,
+    marginTop: 8,
+    alignSelf: 'stretch',
+  },
+  primaryButtonText: { color: CHARCOAL, fontSize: 13, fontWeight: '600', letterSpacing: 2 },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: HAIRLINE,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginTop: 10,
+    borderRadius: 999,
+  },
+  secondaryButtonText: { color: 'rgba(242,236,228,0.7)', fontSize: 11, letterSpacing: 1.5 },
 });
