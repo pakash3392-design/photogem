@@ -7,10 +7,11 @@ type Status = 'idle' | 'ready' | 'processing' | 'done' | 'error';
 
 export default function Home() {
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
-  const [selectedStyle, setSelectedStyle] = useState(STYLE_PRESETS[0].id);
+  const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>('idle');
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState(STYLE_CATEGORIES[0]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback((file: File) => {
@@ -19,9 +20,6 @@ export default function Home() {
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
-        // Resize so the uploaded photo stays well under Vercel's request
-        // size limit -- phone photos can be 5-10MB+, which fails silently
-        // with a confusing error otherwise.
         const MAX_DIMENSION = 1600;
         let { width, height } = img;
         if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
@@ -44,6 +42,7 @@ export default function Home() {
         setStatus('ready');
         setResultUrl(null);
         setErrorMsg(null);
+        setSelectedStyle(null);
       };
       img.src = reader.result as string;
     };
@@ -51,7 +50,7 @@ export default function Home() {
   }, []);
 
   const onDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
+    (e: React.DragEvent<HTMLButtonElement>) => {
       e.preventDefault();
       const file = e.dataTransfer.files?.[0];
       if (file) handleFile(file);
@@ -59,20 +58,18 @@ export default function Home() {
     [handleFile]
   );
 
-  const generate = async () => {
-    if (!imageDataUrl) return;
+  const applyStyle = async (styleId: string) => {
+    setSelectedStyle(styleId);
+    if (!imageDataUrl) return; // just remember the selection until a photo exists
     setStatus('processing');
     setErrorMsg(null);
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageDataUrl, styleId: selectedStyle }),
+        body: JSON.stringify({ imageDataUrl, styleId }),
       });
 
-      // The server (or Vercel's platform, e.g. on a request-too-large error)
-      // can sometimes respond with plain text/HTML instead of JSON. Guard
-      // against that instead of letting res.json() throw a confusing error.
       const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
         const text = await res.text();
@@ -93,93 +90,73 @@ export default function Home() {
     }
   };
 
-  const currentStyle = STYLE_PRESETS.find((s) => s.id === selectedStyle)!;
+  const currentStyle = STYLE_PRESETS.find((s) => s.id === selectedStyle);
+  const stylesInCategory = STYLE_PRESETS.filter((s) => s.category === activeCategory);
+  const displayImage = resultUrl || imageDataUrl;
 
   return (
-    <main className="min-h-screen px-6 py-10 md:py-16 max-w-5xl mx-auto">
+    <main className="min-h-screen px-5 py-8 md:py-12 max-w-6xl mx-auto">
       {/* Header */}
-      <header className="mb-12 md:mb-16">
-        <p className="font-mono text-xs tracking-widest2 text-copper uppercase mb-3">
-          Roll 001 · Exp. never
+      <header className="mb-8 md:mb-10">
+        <p className="font-mono text-xs tracking-widest2 text-copper uppercase mb-2">
+          Darkroom
         </p>
-        <h1 className="font-display italic text-4xl md:text-6xl leading-[1.05] text-cream">
-          Any photo,
-          <br />
-          <span className="text-copper not-italic">someone else&apos;s eye.</span>
+        <h1 className="font-display text-3xl md:text-5xl leading-tight text-cream">
+          Any photo, <span className="text-copper italic">a whole new look.</span>
         </h1>
-        <p className="font-body text-cream/60 mt-4 max-w-md text-sm md:text-base">
-          Drop a photo in. Pick a look. Get the shot as if a photographer you admire
-          had taken it.
+        <p className="font-body text-cream/55 mt-3 max-w-lg text-sm md:text-base">
+          Upload a photo, tap a style, watch it transform. No editing skills needed.
         </p>
       </header>
 
-      {/* Upload / Result frame */}
-      <div
-        className="negative-frame px-8 py-10 md:px-12 md:py-14 mb-8"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={onDrop}
-      >
-        <div className="relative">
-          {status === 'done' && resultUrl ? (
-            <div className="text-center">
-              <img
-                src={resultUrl}
-                alt={`Result in ${currentStyle.name} style`}
-                className="mx-auto max-h-[440px] w-auto rounded-sm shadow-2xl"
-              />
-              <p className="font-mono text-xs text-copper mt-4 tracking-widest2 uppercase">
-                {currentStyle.code} · {currentStyle.name}
-              </p>
-              <div className="flex gap-3 justify-center mt-5">
-                <a
-                  href={resultUrl}
-                  download
-                  className="font-mono text-xs uppercase tracking-widest2 border border-copper text-copper px-5 py-2.5 hover:bg-copper hover:text-charcoal transition-colors"
-                >
-                  Save Image
-                </a>
-                <button
-                  onClick={() => {
-                    setStatus('ready');
-                    setResultUrl(null);
-                  }}
-                  className="font-mono text-xs uppercase tracking-widest2 border border-hairline text-cream/70 px-5 py-2.5 hover:border-cream/40 transition-colors"
-                >
-                  Try Another Look
-                </button>
-              </div>
-            </div>
-          ) : imageDataUrl ? (
-            <div className="text-center">
-              <img
-                src={imageDataUrl}
-                alt="Your uploaded photo"
-                className="mx-auto max-h-[440px] w-auto rounded-sm opacity-95"
-              />
-              {status === 'processing' && (
-                <p className="font-mono text-xs text-copper mt-5 tracking-widest2 uppercase animate-pulse">
-                  Developing in {currentStyle.name}...
+      <div className="grid md:grid-cols-[1fr_340px] gap-6 items-start">
+        {/* Photo panel */}
+        <div className="rounded-3xl bg-surface border border-hairline p-4 md:p-6">
+          <div className="relative rounded-2xl overflow-hidden bg-surface2 min-h-[320px] flex items-center justify-center">
+            {displayImage ? (
+              <>
+                <img
+                  src={displayImage}
+                  alt={resultUrl ? `Photo styled as ${currentStyle?.name}` : 'Your photo'}
+                  className="w-full max-h-[560px] object-contain"
+                />
+                {status === 'processing' && (
+                  <div className="absolute inset-0 bg-charcoal/70 flex flex-col items-center justify-center gap-3">
+                    <div className="w-8 h-8 border-2 border-copper border-t-transparent rounded-full animate-spin" />
+                    <p className="font-mono text-xs text-copper tracking-widest2 uppercase">
+                      Applying {currentStyle?.name}...
+                    </p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={onDrop}
+                className="w-full h-full py-24 text-center group"
+              >
+                <div className="w-14 h-14 rounded-full bg-copper/15 flex items-center justify-center mx-auto mb-4 group-hover:bg-copper/25 transition-colors">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-copper">
+                    <path d="M12 4v16m8-8H4" strokeLinecap="round" />
+                  </svg>
+                </div>
+                <p className="font-display text-xl text-cream/80 group-hover:text-cream transition-colors">
+                  Add a photo to get started
                 </p>
-              )}
-              {status === 'error' && (
-                <p className="font-mono text-xs text-red-400 mt-5 tracking-widest2 uppercase">
-                  {errorMsg}
+                <p className="font-body text-cream/40 text-sm mt-1">
+                  Click here or drop an image
                 </p>
-              )}
-            </div>
-          ) : (
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full text-center py-16 group"
-            >
-              <div className="font-mono text-xs uppercase tracking-widest2 text-cream/40 group-hover:text-copper transition-colors">
-                Click or drop a photo here
-              </div>
-              <div className="font-display italic text-2xl text-cream/70 mt-3 group-hover:text-cream transition-colors">
-                Load your negative
-              </div>
-            </button>
+              </button>
+            )}
+          </div>
+
+          {errorMsg && (
+            <p className="font-body text-sm text-red-400 mt-4 rounded-xl bg-red-400/10 px-4 py-3">
+              {errorMsg}
+            </p>
           )}
+
           <input
             ref={fileInputRef}
             type="file"
@@ -190,68 +167,94 @@ export default function Home() {
               if (file) handleFile(file);
             }}
           />
+
+          {imageDataUrl && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="font-body text-sm text-cream/45 hover:text-cream/80 transition-colors mt-4"
+            >
+              Choose a different photo
+            </button>
+          )}
+        </div>
+
+        {/* Side panel: download + style picker */}
+        <div className="rounded-3xl bg-surface border border-hairline p-4 md:p-5 md:sticky md:top-8">
+          {resultUrl && status === 'done' && (
+            <div className="mb-5 pb-5 border-b border-hairline">
+              <p className="font-mono text-[10px] text-copper tracking-widest2 uppercase mb-3">
+                {currentStyle?.code} · {currentStyle?.name}
+              </p>
+              <a
+                href={resultUrl}
+                download
+                className="flex items-center justify-center gap-2 w-full rounded-xl bg-copper text-charcoal font-body text-sm font-semibold py-3 hover:bg-cream transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M12 3v13m0 0l-5-5m5 5l5-5M4 21h16" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Download photo
+              </a>
+            </div>
+          )}
+
+          <p className="font-mono text-[10px] uppercase tracking-widest2 text-cream/40 mb-3">
+            {imageDataUrl ? 'Tap a style to apply it' : 'Styles'}
+          </p>
+
+          {/* Category pills */}
+          <div className="flex gap-1.5 overflow-x-auto pb-3 mb-1 -mx-1 px-1">
+            {STYLE_CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`flex-shrink-0 rounded-full px-3 py-1.5 font-body text-xs whitespace-nowrap transition-colors ${
+                  activeCategory === cat
+                    ? 'bg-copper text-charcoal font-medium'
+                    : 'bg-surface2 text-cream/50 hover:text-cream/80'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* Style grid */}
+          <div className="grid grid-cols-3 gap-2 max-h-[420px] overflow-y-auto pr-1">
+            {stylesInCategory.map((style) => (
+              <button
+                key={style.id}
+                onClick={() => applyStyle(style.id)}
+                disabled={status === 'processing'}
+                className={`relative rounded-xl overflow-hidden aspect-square border-2 transition-all disabled:opacity-50 ${
+                  selectedStyle === style.id
+                    ? 'border-copper scale-[0.97]'
+                    : 'border-transparent hover:border-copper/40'
+                }`}
+                title={style.name}
+              >
+                <img
+                  src={style.referenceImage}
+                  alt={style.name}
+                  className="w-full h-full object-cover"
+                />
+                <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-charcoal/90 to-transparent text-cream text-[10px] font-body px-1.5 py-1.5 leading-tight text-left">
+                  {style.name}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {!imageDataUrl && (
+            <p className="font-body text-xs text-cream/40 mt-4 rounded-xl bg-surface2 px-3 py-3">
+              Add a photo on the left first — then tapping a style applies it right away.
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Style filmstrip, grouped by category */}
-      <section className="mb-10">
-        {STYLE_CATEGORIES.map((category) => {
-          const stylesInCategory = STYLE_PRESETS.filter((s) => s.category === category);
-          if (stylesInCategory.length === 0) return null;
-          return (
-            <div key={category} className="mb-8">
-              <p className="font-mono text-xs uppercase tracking-widest2 text-cream/40 mb-4">
-                {category}
-              </p>
-              <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1">
-                {stylesInCategory.map((style) => (
-                  <button
-                    key={style.id}
-                    onClick={() => setSelectedStyle(style.id)}
-                    className={`flex-shrink-0 w-40 text-left border transition-colors ${
-                      selectedStyle === style.id
-                        ? 'border-copper'
-                        : 'border-hairline hover:border-cream/30'
-                    }`}
-                  >
-                    <div className="relative w-full h-24 overflow-hidden bg-surface2">
-                      <img
-                        src={style.referenceImage}
-                        alt={style.name}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="grain-overlay" />
-                    </div>
-                    <div className="px-3 py-2.5">
-                      <p className="font-mono text-[10px] text-copper tracking-widest2 uppercase">
-                        {style.code}
-                      </p>
-                      <p className="font-display text-cream text-sm mt-0.5">{style.name}</p>
-                      <p className="font-body text-cream/40 text-xs mt-0.5">
-                        {style.description}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </section>
-
-      {/* Generate button */}
-      {imageDataUrl && status !== 'done' && (
-        <button
-          onClick={generate}
-          disabled={status === 'processing'}
-          className="font-mono text-sm uppercase tracking-widest2 bg-copper text-charcoal px-8 py-3.5 hover:bg-cream transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {status === 'processing' ? 'Developing...' : 'Apply Look'}
-        </button>
-      )}
-
-      <footer className="mt-20 font-mono text-[10px] text-cream/25 tracking-widest2 uppercase">
-        Styles are references, not the photographers themselves · Build your own roll in lib/styles.ts
+      <footer className="mt-14 font-mono text-[10px] text-cream/25 tracking-widest2 uppercase">
+        68 styles across 13 categories · Build your own in lib/styles.ts
       </footer>
     </main>
   );
