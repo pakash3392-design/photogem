@@ -17,6 +17,14 @@
         {
           "cameraPermission": "Darkroom needs camera access to show a live preview and capture photos to style."
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Darkroom needs access to your photos so you can apply a style to them.",
+          "savePhotosPermission": "Darkroom needs permission to save your styled photos to your camera roll.",
+          "isAccessMediaLocationEnabled": false
+        }
       ]
     ],
     "ios": {
@@ -24,6 +32,7 @@
       "bundleIdentifier": "com.yourcompany.darkroom",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Darkroom needs access to your photos so you can apply a style to them.",
+        "NSPhotoLibraryAddUsageDescription": "Darkroom needs permission to save your styled photos to your camera roll.",
         "NSCameraUsageDescription": "Darkroom needs camera access so you can take a photo to style."
       }
     },

@@ -1,8 +1,9 @@
 # Darkroom — one-tap photographer styles
 
-A working starter app: upload a photo, pick a style, get it back transformed.
-Built with Next.js (React) so the same code can power your web app, and the
-API route can later be reused by a mobile app (React Native / Flutter) too.
+Upload a photo, tap a style, get it back transformed instantly. Built with
+Next.js (React). All 68 styles are applied entirely in the browser using
+real color-grading code (Canvas API) -- no AI service, no API keys, no
+per-image cost, and it works instantly.
 
 ## What's already built
 - Upload UI with drag-and-drop (`app/page.tsx`)
@@ -10,75 +11,56 @@ API route can later be reused by a mobile app (React Native / Flutter) too.
   Street, Wedding, Fashion, Film & Vintage, Cinematic, Black & White,
   Experimental, Nature & Wildlife, Architecture, Night & Urban, Lifestyle.
   18 of these use real reference photos (in `public/reference-photos`);
-  the rest use placeholder images clearly marked in the code.
-- A backend API route (`app/api/generate/route.ts`) that sends your photo +
-  the chosen style's prompt to Replicate's Flux Kontext Pro model and
-  returns the edited result
-- Custom "darkroom" visual design (dark charcoal, copper accent, film-strip frame)
+  the rest use placeholder thumbnail images clearly marked in the code.
+- A real photo-filter engine (`lib/applyFilter.ts`) that applies each
+  style's color grade, contrast, warmth/tint, grain, and vignette directly
+  to the pixels of your photo using the Canvas API
+- Custom "darkroom" visual design (dark charcoal, copper accent)
 
-## What you need to do to run it
+## Running it
 
-### 1. Install dependencies
 ```
 npm install
-```
-
-### 2. Get a Replicate account + API token
-Replicate is the AI provider that actually does the photo editing.
-- Sign up at https://replicate.com
-- Create a token at https://replicate.com/account/api-tokens
-- You pay per image generated (roughly $0.04-$0.08 each depending on
-  resolution) — no monthly fee
-
-### 3. Set your environment variables
-```
-cp .env.example .env.local
-```
-Fill in `REPLICATE_API_TOKEN` in `.env.local`. You don't need to pick or
-configure a model -- the app defaults to Replicate's official
-`black-forest-labs/flux-kontext-pro`, a text-instructed photo editing model.
-(You can override it with `REPLICATE_MODEL_VERSION` later if you want to
-try a different model.)
-
-### 4. Run it
-```
 npm run dev
 ```
-Open http://localhost:3000
 
-Note: reference photos stored locally (`public/reference-photos`) only
-resolve to a real URL once this app is deployed -- Replicate's servers can't
-reach `localhost`. Locally, "Apply Look" only fully works for styles using
-an external `https://` reference image or a picsum.photos placeholder,
-until you deploy.
+Open http://localhost:3000. That's it — no environment variables, no API
+keys, no third-party account needed. Everything runs client-side.
 
-## How the AI editing works
-Flux Kontext Pro takes your uploaded photo plus a text instruction and edits
-the photo directly -- it doesn't need a separate "style reference" image the
-way older style-transfer models did. Each style's `prompt` in `lib/styles.ts`
-IS that instruction. The `referenceImage` on each style is only used to show
-a thumbnail in the app's UI, not sent to the AI for image-based matching.
+## How the styling actually works
+Each style in `lib/styles.ts` has a `filter` field:
 
-## Adding your own photographer styles
-Open `lib/styles.ts`. Each style needs:
-- `referenceImage`: a thumbnail shown in the picker -- can be a photo you
-  upload to `public/reference-photos` (see the 18 existing examples) or any
-  public image URL
-- `prompt`: a specific text description of the look (lighting, color grade,
-  film grain, mood) -- this is what the AI actually follows, so be precise
+```ts
+filter: { grayscale: false, warmth: 24, tint: 4, saturation: 1.1, contrast: 1.15, grain: 0.08, vignette: 0.12 }
+```
 
-## Next steps (in order)
-1. **Get this running locally** and confirm one style works end-to-end
-   before relying on all 68.
-2. **Deploy the web app** — push this to GitHub, then import it on
-   https://vercel.com (free tier), or deploy directly with `npx vercel`.
-   Add your `REPLICATE_API_TOKEN` in Vercel's environment variables.
-3. **Add accounts + saved history** (optional) — Supabase or Firebase for
-   users to save past edits.
-4. **Wrap for mobile** — the `photo-style-mobile` Expo app calls this same
-   `/api/generate` endpoint once it's deployed.
+`lib/applyFilter.ts` reads these numbers and applies them directly to your
+photo's pixels: contrast and brightness math, a saturation blend against
+luminance, a warmth/tint channel shift, an optional grayscale pass, a radial
+vignette, and a film-grain overlay. This is the same category of technique
+real photo-filter apps use — deterministic, fast, and free to run as much as
+you want.
 
-## Notes on cost and scale
-Every "Apply Look" click = one paid API call to Replicate. Keep an eye on
-usage while testing. Once you have real users, you'll want to add rate
-limiting and possibly a credits system so costs don't run away.
+## Adding or tuning your own styles
+Open `lib/styles.ts`. Each style needs a `referenceImage` (thumbnail shown
+in the picker) and a `filter` recipe. Tweak the numbers directly, or use
+these ranges as a guide:
+- `warmth`: -100 (cooler/blue) to 100 (warmer/orange)
+- `tint`: -100 (green) to 100 (magenta)
+- `saturation`: 0 (grayscale) to ~1.5 (vivid); 1 = untouched
+- `contrast`: ~0.75 (flat) to ~1.45 (punchy); 1 = untouched
+- `grain`: 0 (clean) to ~0.3 (heavy film grain)
+- `vignette`: 0 (none) to ~0.3 (strong edge darkening)
+
+## Deploying
+Push to GitHub, import into Vercel (vercel.com) — no environment variables
+needed. It's a static-friendly app with no backend calls required for the
+core feature.
+
+## Next steps
+- Swap the 50 placeholder-image styles for real reference photos as you
+  shoot or source them
+- If you later want true AI-level transformations (e.g. actually repainting
+  a background, not just color grading), that's a separate, paid feature
+  you can add back via a service like Replicate -- but the current filter
+  engine covers the vast majority of "photographer style" requests for free

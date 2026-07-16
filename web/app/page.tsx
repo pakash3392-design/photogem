@@ -2,15 +2,16 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { STYLE_PRESETS, STYLE_CATEGORIES } from '@/lib/styles';
+import { applyFilter } from '@/lib/applyFilter';
 
-type Status = 'idle' | 'ready' | 'processing' | 'done' | 'error';
+type Status = 'idle' | 'ready' | 'processing' | 'done';
 
 export default function Home() {
+  const [sourceImg, setSourceImg] = useState<HTMLImageElement | null>(null);
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>('idle');
   const [resultUrl, setResultUrl] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState(STYLE_CATEGORIES[0]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -20,28 +21,10 @@ export default function Home() {
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
-        const MAX_DIMENSION = 1600;
-        let { width, height } = img;
-        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
-          if (width > height) {
-            height = Math.round((height * MAX_DIMENSION) / width);
-            width = MAX_DIMENSION;
-          } else {
-            width = Math.round((width * MAX_DIMENSION) / height);
-            height = MAX_DIMENSION;
-          }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-        const resizedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-
-        setImageDataUrl(resizedDataUrl);
+        setSourceImg(img);
+        setImageDataUrl(reader.result as string);
         setStatus('ready');
         setResultUrl(null);
-        setErrorMsg(null);
         setSelectedStyle(null);
       };
       img.src = reader.result as string;
@@ -58,36 +41,20 @@ export default function Home() {
     [handleFile]
   );
 
-  const applyStyle = async (styleId: string) => {
+  const applyStyle = (styleId: string) => {
     setSelectedStyle(styleId);
-    if (!imageDataUrl) return; // just remember the selection until a photo exists
+    if (!sourceImg) return; // just remember the selection until a photo exists
+    const style = STYLE_PRESETS.find((s) => s.id === styleId);
+    if (!style) return;
+
     setStatus('processing');
-    setErrorMsg(null);
-    try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageDataUrl, styleId }),
-      });
-
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        const text = await res.text();
-        throw new Error(
-          res.status === 413
-            ? 'That photo was too large to upload. Try a different photo.'
-            : `Unexpected server response (${res.status}): ${text.slice(0, 120)}`
-        );
-      }
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Something went wrong');
-      setResultUrl(data.resultUrl);
+    // A microtask delay so the "applying" state actually paints before the
+    // (synchronous, near-instant) canvas work runs.
+    requestAnimationFrame(() => {
+      const result = applyFilter(sourceImg, style.filter);
+      setResultUrl(result);
       setStatus('done');
-    } catch (err: any) {
-      setErrorMsg(err.message);
-      setStatus('error');
-    }
+    });
   };
 
   const currentStyle = STYLE_PRESETS.find((s) => s.id === selectedStyle);
@@ -105,7 +72,7 @@ export default function Home() {
           Any photo, <span className="text-copper italic">a whole new look.</span>
         </h1>
         <p className="font-body text-cream/55 mt-3 max-w-lg text-sm md:text-base">
-          Upload a photo, tap a style, watch it transform. No editing skills needed.
+          Upload a photo, tap a style, watch it transform instantly. No editing skills needed.
         </p>
       </header>
 
@@ -121,11 +88,8 @@ export default function Home() {
                   className="w-full max-h-[560px] object-contain"
                 />
                 {status === 'processing' && (
-                  <div className="absolute inset-0 bg-charcoal/70 flex flex-col items-center justify-center gap-3">
+                  <div className="absolute inset-0 bg-charcoal/60 flex items-center justify-center">
                     <div className="w-8 h-8 border-2 border-copper border-t-transparent rounded-full animate-spin" />
-                    <p className="font-mono text-xs text-copper tracking-widest2 uppercase">
-                      Applying {currentStyle?.name}...
-                    </p>
                   </div>
                 )}
               </>
@@ -150,12 +114,6 @@ export default function Home() {
               </button>
             )}
           </div>
-
-          {errorMsg && (
-            <p className="font-body text-sm text-red-400 mt-4 rounded-xl bg-red-400/10 px-4 py-3">
-              {errorMsg}
-            </p>
-          )}
 
           <input
             ref={fileInputRef}
@@ -187,7 +145,7 @@ export default function Home() {
               </p>
               <a
                 href={resultUrl}
-                download
+                download={`darkroom-${currentStyle?.id}.jpg`}
                 className="flex items-center justify-center gap-2 w-full rounded-xl bg-copper text-charcoal font-body text-sm font-semibold py-3 hover:bg-cream transition-colors"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -225,8 +183,7 @@ export default function Home() {
               <button
                 key={style.id}
                 onClick={() => applyStyle(style.id)}
-                disabled={status === 'processing'}
-                className={`relative rounded-xl overflow-hidden aspect-square border-2 transition-all disabled:opacity-50 ${
+                className={`relative rounded-xl overflow-hidden aspect-square border-2 transition-all ${
                   selectedStyle === style.id
                     ? 'border-copper scale-[0.97]'
                     : 'border-transparent hover:border-copper/40'
@@ -254,7 +211,7 @@ export default function Home() {
       </div>
 
       <footer className="mt-14 font-mono text-[10px] text-cream/25 tracking-widest2 uppercase">
-        68 styles across 13 categories · Build your own in lib/styles.ts
+        68 styles across 13 categories · Applied instantly, entirely in your browser
       </footer>
     </main>
   );

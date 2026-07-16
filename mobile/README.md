@@ -1,17 +1,8 @@
 # Darkroom — mobile app (iOS + Android)
 
-Built with Expo (React Native) — one codebase, both platforms. It calls the
-**same backend** as the web app (`photo-style-app`), so you only maintain the
-AI pipeline in one place.
-
-## Before you start
-You need the web app's backend deployed and reachable from your phone:
-- **Easiest**: deploy `photo-style-app` to Vercel (free) — see its README.
-  Then set `API_BASE_URL` in `constants/styles.ts` to your Vercel URL.
-- **For local testing only**: run `npm run dev` in `photo-style-app`, find your
-  computer's LAN IP (e.g. `192.168.1.24`), and set `API_BASE_URL` to
-  `http://192.168.1.24:3000`. Your phone and computer must be on the same WiFi.
-  ("localhost" will not work from a phone.)
+Built with Expo (React Native) — one codebase, both platforms. All 68 styles
+are applied instantly, entirely on your phone, using real color-grading
+code -- no backend, no AI service, no API keys, no per-photo cost.
 
 ## Setup
 ```
@@ -23,51 +14,50 @@ Install the free **Expo Go** app on your phone (App Store / Play Store).
 ```
 npm start
 ```
-This opens a QR code in your terminal/browser. Scan it with:
-- iPhone: the Camera app
-- Android: the Expo Go app's built-in scanner
-
-Your app opens live on your phone. Edit code, save, and it reloads instantly.
+Scan the QR code with your phone (Camera app on iPhone, Expo Go's scanner
+on Android). Your phone and computer need to be on the same WiFi.
 
 ## What's already built
-- `components/CameraScreen.tsx` — live camera with a real-time color-tint preview per
-  style (an approximation, not the real AI look — see note below), plus a shutter
-  button and a style filmstrip
-- `components/ReviewScreen.tsx` — after capture (or picking from your library), shows
-  the photo and runs the real AI style transfer when you tap "Apply Look"
-- `App.tsx` — opens straight to the camera, hands off to the review screen after capture
-- `constants/styles.ts` — same 4 starter styles as the web app, each with a
-  `previewTint`/`previewOpacity` used only for the live camera preview
+- `components/CameraScreen.tsx` — live camera with a real-time color-tint
+  preview per style, plus a shutter button and a style filmstrip
+- `components/ReviewScreen.tsx` — after capture (or picking from your
+  library), instantly applies the selected style's real color-grading
+  filter -- tap any style and it updates immediately, no waiting
+- `components/FilteredImage.tsx` — renders the live filtered preview using
+  `react-native-svg`'s built-in color-matrix filter support
+- `lib/colorMatrix.ts` — converts each style's filter recipe into the SVG
+  color matrix that actually does the work
+- "Save to Photos" button — captures the filtered view and saves it to your
+  camera roll using `expo-media-library`
+- `constants/styles.ts` — same 68 styles as the web app, each with a
+  `filter` recipe (warmth, tint, saturation, contrast, grain, vignette)
 
-## Why the live preview isn't the "real" AI look
-The real style transfer (Portra grain, noir contrast, etc.) runs as a cloud AI
-generation and takes a few seconds per image — too slow and too costly to run
-30 times a second while you're framing a shot. So the live camera view shows a
-fast, on-device color tint that approximates the mood, and the full-quality AI
-version is generated after you tap the shutter. This is the same tradeoff apps
-like Instagram/Snapchat make: their *live* filters are simple color/light
-effects; heavier AI look changes happen after capture, not live.
-If you want a closer live approximation later (e.g. real per-pixel grain or
-proper desaturation instead of a flat tint), that needs a GPU shader pipeline
-(`react-native-vision-camera` + `react-native-skia`) — a bigger addition I can
-scope separately if you want it.
-
+## How the styling works (no AI, no network)
+Each style has a `filter` recipe, e.g.:
+```ts
+filter: { grayscale: false, warmth: 24, tint: 4, saturation: 1.1, contrast: 1.15, grain: 0.08, vignette: 0.12 }
+```
+`lib/colorMatrix.ts` turns these numbers into an SVG color matrix, applied
+live via `react-native-svg`'s `<FeColorMatrix>` -- the same underlying idea
+as the web app's canvas-based engine, just expressed as a matrix instead of
+a per-pixel loop. Note: grain and vignette are applied on the web app but
+not yet on mobile (a color matrix can't express per-pixel noise or a radial
+overlay) -- color grading (warmth/tint/saturation/contrast) is fully live
+on both platforms.
 
 ## Keeping styles in sync
-If you add a new style in the web app's `lib/styles.ts`, copy the same entry
-into this app's `constants/styles.ts`. (Once you're comfortable, these can be
-merged into one shared package — ask me and I'll set that up.)
+The web app and mobile app both read from the same generator
+(`style-gen/generate.py` if you have it, or edit `constants/styles.ts`
+directly) -- if you add a style in one, add the matching entry in the other
+so they stay identical.
 
 ## Getting it onto real devices / app stores
 Expo Go is for development only. To publish for real:
 1. Create a free Expo (EAS) account at https://expo.dev
 2. Run `npx eas build --platform ios` / `--platform android`
-   (this builds real installable app files in the cloud, no Mac needed even
-   for iOS)
-3. Submit to the App Store / Google Play via `npx eas submit`
-   (needs a $99/yr Apple Developer account and a $25 one-time Google Play
-   account)
+3. Submit via `npx eas submit` (needs a $99/yr Apple Developer account and
+   a $25 one-time Google Play account)
 
-I can walk through the EAS build + store submission step by step whenever
-you're ready for that stage — it's a good next milestone once the app works
-the way you want in Expo Go.
+Since this app has zero backend dependency now, once it's built as a real
+installable app it works completely offline, anywhere, anytime -- no
+computer, no WiFi requirement, no server costs ever.
