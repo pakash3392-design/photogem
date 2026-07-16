@@ -899,4 +899,4 @@ export const STYLE_PRESETS: StylePreset[] = [
 // Where your deployed backend lives. During local dev, this is your computer's
 // LAN IP (not "localhost" -- a phone can't reach your computer's localhost).
 // e.g. "http://192.168.1.24:3000". Once deployed, use your Vercel URL.
-export const API_BASE_URL = 'https://your-app.vercel.app';
+export const API_BASE_URL = 'https://photoedit-black.vercel.app';
