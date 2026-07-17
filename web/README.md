@@ -1,68 +1,57 @@
 # Darkroom — one-tap photographer styles
 
 Upload a photo, tap a style, get a real AI-edited photo back in seconds.
-Built with Next.js (React), using Google's Gemini 2.5 Flash Image model for
-genuine AI photo editing -- actual re-lighting, mood, and atmosphere, not
+Built with Next.js (React), using Pollinations.ai's free `kontext` model for
+genuine AI photo editing -- real re-lighting, mood, and atmosphere, not
 just a color filter.
 
-## Why Gemini
-Gemini 2.5 Flash Image has a real free tier as of mid-2026: hundreds of
-image edits per day, no credit card required. (An earlier version of this
-app used Replicate's Flux Kontext Pro, which required paid billing after a
-short free trial -- Gemini avoids that.)
+## Why this setup
+No API key, no signup, no billing, no environment variables. This app tried
+two paid/quota-limited AI providers before landing here (Replicate required
+billing after a short free trial; Google's Gemini image models dropped
+their free tier to zero in December 2025). Pollinations.ai's image editing
+is free with no account required.
+
+**Honest tradeoff**: to edit your photo, this app briefly uploads it to
+0x0.st (a free, anonymous, no-account file host) to get a URL, since
+Pollinations' editor needs a URL rather than raw image data. That means
+your photo is reachable at an unguessable but public link for a while
+during editing -- not private the way a signed-in paid service would be.
+Fine for personal use; reconsider before handling real users' private
+photos at scale (see "Next steps" below).
 
 ## What's already built
 - Upload UI with drag-and-drop and automatic resizing (`app/page.tsx`)
 - 78 styles across 13 categories (`lib/styles.ts`)
-- A backend API route (`app/api/generate/route.ts`) that sends your photo +
-  the chosen style's prompt to Gemini and returns the edited result
+- A backend API route (`app/api/generate/route.ts`) that handles the
+  temporary upload + AI edit + returns the result
 - Custom "darkroom" visual design (dark charcoal, copper accent)
 
 ## Running it
-
-### 1. Install dependencies
 ```
 npm install
-```
-
-### 2. Get a free Gemini API key
-- Go to https://aistudio.google.com/apikey
-- Sign in with a Google account, click "Create API key" — no credit card
-- Copy the key
-
-### 3. Set your environment variable
-```
-cp .env.example .env.local
-```
-Paste your key into `GEMINI_API_KEY` in `.env.local`.
-
-### 4. Run it
-```
 npm run dev
 ```
-Open http://localhost:3000
+Open http://localhost:3000. That's genuinely it -- no keys, no accounts.
 
 ## Deploying
-Push to GitHub, import into Vercel, add `GEMINI_API_KEY` in Vercel's
-Environment Variables (Settings > Environment Variables), covering
-Production.
+Push to GitHub, import into Vercel. No environment variables needed.
 
-## How the AI editing works
-Gemini 2.5 Flash Image takes your photo plus a text instruction and returns
-a genuinely edited image (`app/api/generate/route.ts`). Each style's
-`prompt` in `lib/styles.ts` describes the treatment; the route wraps it
-with instructions to act as an expert retoucher and to keep the subject and
-composition recognizable, so it reads as a professional edit of your photo
-rather than a different photo entirely.
+## Limits to know about
+Pollinations' anonymous tier allows about 1 request every 15 seconds --
+fine for one person using the app, but it'll bottleneck with many
+simultaneous users. If you outgrow this:
+- Register a free Pollinations account (auth.pollinations.ai) for higher
+  limits and no watermark
+- Or swap in a paid provider (Replicate, Gemini with billing enabled) in
+  `app/api/generate/route.ts` for guaranteed capacity and better privacy
 
 ## Adding your own styles
 Open `lib/styles.ts`. Each style needs a `referenceImage` (thumbnail for
-the picker) and a `prompt` (the actual instruction Gemini follows) — be
+the picker) and a `prompt` (the actual instruction the AI follows) — be
 specific about lighting, color, mood, and technique.
 
-## Cost and limits
-This app is free to run within Gemini's free tier. If you exceed the daily
-free limit, requests will start failing until it resets — check current
-limits at https://ai.google.dev/gemini-api/docs/pricing. If you outgrow the
-free tier, Gemini's paid pricing is inexpensive per image, or you can swap
-in another model in `app/api/generate/route.ts`.
+## Next steps if you outgrow the free tier
+- Add real user accounts + private photo storage instead of the temporary
+  public-URL step, if privacy matters for your users
+- Add a paid AI provider as a fallback when Pollinations is rate-limited

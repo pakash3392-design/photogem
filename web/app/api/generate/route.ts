@@ -1,16 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
 import { STYLE_PRESETS } from '@/lib/styles';
 
-// This route receives the user's photo (as a data URL) + a style id, sends
-// both to Google's Gemini 2.5 Flash Image model ("Nano Banana"), and
-// returns the edited photo as a data URL.
+// This route receives the user's photo (as a data URL) + a style id, and
+// returns a real AI-edited photo -- entirely free, no API key, no signup,
+// no billing.
 //
-// Why Gemini instead of Replicate: Gemini 2.5 Flash Image has a genuine
-// free tier (hundreds of edits/day, no credit card) as of mid-2026, unlike
-// Replicate's pay-per-run models. This does real AI image editing -- actual
-// re-lighting, mood, and atmosphere -- not just color-grading math.
-// Docs: https://ai.google.dev/gemini-api/docs/image-generation
+// How: Pollinations.ai's "kontext" model does true image-to-image editing,
+// but its API needs a URL to the input photo rather than raw image data.
+// So this route does two steps:
+//   1. Briefly upload the photo to 0x0.st (a free, anonymous, no-account
+//      file host) to get a temporary public URL.
+//   2. Pass that URL + the style's prompt to Pollinations' kontext model,
+//      which returns the edited image directly.
+//
+// Honest tradeoff: step 1 means the photo is briefly reachable at an
+// unguessable but public URL on a third-party host, not private the way a
+// signed-in service would be. Fine for personal use; worth reconsidering
+// (e.g. switching to a paid, private AI provider) before handling real
+// users' private photos at scale.
+//
+// Docs: https://github.com/pollinations/pollinations/blob/master/APIDOCS.md
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,53 +37,55 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unknown style' }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json(
-        { error: 'Server is missing GEMINI_API_KEY. See README.md.' },
-        { status: 500 }
-      );
-    }
-
-    // imageDataUrl looks like "data:image/jpeg;base64,AAAA..." -- Gemini
-    // wants the raw base64 and mime type split apart.
     const match = imageDataUrl.match(/^data:(image\/[a-zA-Z]+);base64,(.+)$/);
     if (!match) {
       return NextResponse.json({ error: 'Invalid image data' }, { status: 400 });
     }
     const [, mimeType, base64Data] = match;
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+    const ext = mimeType.split('/')[1] || 'jpg';
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    // Step 1: get a temporary public URL for the photo.
+    const uploadForm = new FormData();
+    uploadForm.append('file', new Blob([imageBuffer], { type: mimeType }), `photo.${ext}`);
 
-    // A clear, expert-level instruction: real transformation (lighting,
-    // atmosphere, color, mood) while keeping the subject and composition
-    // recognizable -- this is what makes it feel like "magic" rather than
-    // a simple filter, without turning into a different photo entirely.
-    const editPrompt = `You are an expert professional photo editor. Apply this exact treatment to the attached photo with real skill -- proper re-lighting, color grading, atmosphere, and mood, the way a professional retoucher would, not just a flat color filter:
+    const uploadRes = await fetch('https://0x0.st', {
+      method: 'POST',
+      body: uploadForm,
+      headers: { 'User-Agent': 'Darkroom-App/1.0' },
+    });
+    if (!uploadRes.ok) {
+      throw new Error('Could not prepare your photo for editing. Try again in a moment.');
+    }
+    const tempImageUrl = (await uploadRes.text()).trim();
+    if (!tempImageUrl.startsWith('http')) {
+      throw new Error('Could not prepare your photo for editing. Try again in a moment.');
+    }
 
-${style.prompt}
+    // Step 2: send it to Pollinations' kontext model for real AI editing.
+    const editPrompt = `Expert professional photo edit. Apply this exact treatment with real skill -- proper re-lighting, color grading, atmosphere, and mood, like a professional retoucher, not a flat filter: ${style.prompt}. Keep the same subject and composition recognizable -- this is a professional edit of this photo, not a different photo.`;
 
-Keep the same person/subject and overall composition recognizable -- this is a professional edit of this photo, not a different photo. Make it look genuinely expert and polished, not overdone.`;
+    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(editPrompt)}?model=kontext&image=${encodeURIComponent(tempImageUrl)}&width=1024&height=1024&nologo=true&referrer=darkroom-app`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: [
-        { text: editPrompt },
-        { inlineData: { data: base64Data, mimeType } },
-      ],
+    const editRes = await fetch(pollinationsUrl, {
+      headers: { 'User-Agent': 'Darkroom-App/1.0' },
     });
 
-    const parts = response.candidates?.[0]?.content?.parts || [];
-    const imagePart = parts.find((p: any) => p.inlineData);
-
-    if (!imagePart || !imagePart.inlineData) {
-      const textPart = parts.find((p: any) => p.text);
+    if (!editRes.ok) {
+      const text = await editRes.text().catch(() => '');
       throw new Error(
-        textPart?.text || 'The model did not return an edited image. Try again.'
+        editRes.status === 429
+          ? 'Too many requests right now -- wait about 15 seconds and try again.'
+          : `The editor didn't return a result (${editRes.status}). ${text.slice(0, 150)}`
       );
     }
 
-    const resultMime = imagePart.inlineData.mimeType || 'image/png';
-    const resultUrl = `data:${resultMime};base64,${imagePart.inlineData.data}`;
+    const resultBuffer = Buffer.from(await editRes.arrayBuffer());
+    const resultContentType = editRes.headers.get('content-type') || 'image/jpeg';
+    if (!resultContentType.startsWith('image/')) {
+      throw new Error('The editor did not return an image. Try again.');
+    }
+    const resultUrl = `data:${resultContentType};base64,${resultBuffer.toString('base64')}`;
 
     return NextResponse.json({ resultUrl });
   } catch (err: any) {
