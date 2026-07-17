@@ -2,22 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { STYLE_PRESETS } from '@/lib/styles';
 
 // This route receives the user's photo (as a data URL) + a style id, and
-// returns a real AI-edited photo -- entirely free, no API key, no signup,
-// no billing.
+// returns a real AI-edited photo using Pollinations.ai's "kontext" model --
+// free, no API key, no signup, no billing.
 //
-// How: Pollinations.ai's "kontext" model does true image-to-image editing,
-// but its API needs a URL to the input photo rather than raw image data.
-// So this route does two steps:
-//   1. Briefly upload the photo to 0x0.st (a free, anonymous, no-account
-//      file host) to get a temporary public URL.
-//   2. Pass that URL + the style's prompt to Pollinations' kontext model,
-//      which returns the edited image directly.
-//
-// Honest tradeoff: step 1 means the photo is briefly reachable at an
-// unguessable but public URL on a third-party host, not private the way a
-// signed-in service would be. Fine for personal use; worth reconsidering
-// (e.g. switching to a paid, private AI provider) before handling real
-// users' private photos at scale.
+// This sends the photo directly to Pollinations' edit endpoint (multipart
+// upload) rather than routing through a separate temporary file host --
+// simpler and more reliable than a two-step relay.
 //
 // Docs: https://github.com/pollinations/pollinations/blob/master/APIDOCS.md
 
@@ -45,29 +35,16 @@ export async function POST(req: NextRequest) {
     const imageBuffer = Buffer.from(base64Data, 'base64');
     const ext = mimeType.split('/')[1] || 'jpg';
 
-    // Step 1: get a temporary public URL for the photo.
-    const uploadForm = new FormData();
-    uploadForm.append('file', new Blob([imageBuffer], { type: mimeType }), `photo.${ext}`);
-
-    const uploadRes = await fetch('https://0x0.st', {
-      method: 'POST',
-      body: uploadForm,
-      headers: { 'User-Agent': 'Darkroom-App/1.0' },
-    });
-    if (!uploadRes.ok) {
-      throw new Error('Could not prepare your photo for editing. Try again in a moment.');
-    }
-    const tempImageUrl = (await uploadRes.text()).trim();
-    if (!tempImageUrl.startsWith('http')) {
-      throw new Error('Could not prepare your photo for editing. Try again in a moment.');
-    }
-
-    // Step 2: send it to Pollinations' kontext model for real AI editing.
     const editPrompt = `Expert professional photo edit. Apply this exact treatment with real skill -- proper re-lighting, color grading, atmosphere, and mood, like a professional retoucher, not a flat filter: ${style.prompt}. Keep the same subject and composition recognizable -- this is a professional edit of this photo, not a different photo.`;
 
-    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(editPrompt)}?model=kontext&image=${encodeURIComponent(tempImageUrl)}&width=1024&height=1024&nologo=true&referrer=darkroom-app`;
+    const form = new FormData();
+    form.append('image', new Blob([imageBuffer], { type: mimeType }), `photo.${ext}`);
+    form.append('prompt', editPrompt);
+    form.append('model', 'kontext');
 
-    const editRes = await fetch(pollinationsUrl, {
+    const editRes = await fetch('https://gen.pollinations.ai/v1/images/edits', {
+      method: 'POST',
+      body: form,
       headers: { 'User-Agent': 'Darkroom-App/1.0' },
     });
 
@@ -76,16 +53,32 @@ export async function POST(req: NextRequest) {
       throw new Error(
         editRes.status === 429
           ? 'Too many requests right now -- wait about 15 seconds and try again.'
-          : `The editor didn't return a result (${editRes.status}). ${text.slice(0, 150)}`
+          : `The editor didn't return a result (${editRes.status}). ${text.slice(0, 200)}`
       );
     }
 
-    const resultBuffer = Buffer.from(await editRes.arrayBuffer());
-    const resultContentType = editRes.headers.get('content-type') || 'image/jpeg';
-    if (!resultContentType.startsWith('image/')) {
-      throw new Error('The editor did not return an image. Try again.');
+    const responseContentType = editRes.headers.get('content-type') || '';
+
+    let resultUrl: string;
+    if (responseContentType.includes('application/json')) {
+      // Some Pollinations endpoints return JSON with a hosted image URL
+      // rather than raw image bytes -- handle both shapes.
+      const data = await editRes.json();
+      const hostedUrl = data?.data?.[0]?.url || data?.url || data?.images?.[0];
+      if (!hostedUrl) {
+        throw new Error('The editor did not return an image. Try again.');
+      }
+      const imgRes = await fetch(hostedUrl);
+      const imgBuffer = Buffer.from(await imgRes.arrayBuffer());
+      const imgContentType = imgRes.headers.get('content-type') || 'image/jpeg';
+      resultUrl = `data:${imgContentType};base64,${imgBuffer.toString('base64')}`;
+    } else if (responseContentType.startsWith('image/')) {
+      const resultBuffer = Buffer.from(await editRes.arrayBuffer());
+      resultUrl = `data:${responseContentType};base64,${resultBuffer.toString('base64')}`;
+    } else {
+      const text = await editRes.text().catch(() => '');
+      throw new Error(`Unexpected response from the editor. ${text.slice(0, 200)}`);
     }
-    const resultUrl = `data:${resultContentType};base64,${resultBuffer.toString('base64')}`;
 
     return NextResponse.json({ resultUrl });
   } catch (err: any) {

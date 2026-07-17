@@ -10,15 +10,8 @@ No API key, no signup, no billing, no environment variables. This app tried
 two paid/quota-limited AI providers before landing here (Replicate required
 billing after a short free trial; Google's Gemini image models dropped
 their free tier to zero in December 2025). Pollinations.ai's image editing
-is free with no account required.
-
-**Honest tradeoff**: to edit your photo, this app briefly uploads it to
-0x0.st (a free, anonymous, no-account file host) to get a URL, since
-Pollinations' editor needs a URL rather than raw image data. That means
-your photo is reachable at an unguessable but public link for a while
-during editing -- not private the way a signed-in paid service would be.
-Fine for personal use; reconsider before handling real users' private
-photos at scale (see "Next steps" below).
+is free with no account required -- your photo is uploaded directly to
+their edit endpoint, no third-party relay involved.
 
 ## What's already built
 - Upload UI with drag-and-drop and automatic resizing (`app/page.tsx`)
