@@ -42,10 +42,20 @@ export async function POST(req: NextRequest) {
     form.append('prompt', editPrompt);
     form.append('model', 'kontext');
 
+    if (!process.env.POLLINATIONS_API_KEY) {
+      return NextResponse.json(
+        { error: 'Server is missing POLLINATIONS_API_KEY. See README.md.' },
+        { status: 500 }
+      );
+    }
+
     const editRes = await fetch('https://gen.pollinations.ai/v1/images/edits', {
       method: 'POST',
       body: form,
-      headers: { 'User-Agent': 'Darkroom-App/1.0' },
+      headers: {
+        'User-Agent': 'Darkroom-App/1.0',
+        Authorization: `Bearer ${process.env.POLLINATIONS_API_KEY}`,
+      },
     });
 
     if (!editRes.ok) {
